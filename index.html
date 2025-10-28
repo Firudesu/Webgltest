@@ -86,9 +86,8 @@
     </div>
     <div id="chatBubble"></div>
     
-    <!-- Three.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Three.js CDN - Updated to newer version with CapsuleGeometry -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
     
     <script>
         // Social Hub Game - 3rd Person WebGL Game using Three.js
@@ -185,8 +184,14 @@
             
             // Player character setup
             setupPlayer() {
-                // Player capsule
-                const playerGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 4, 8);
+                // Player capsule (using cylinder as fallback for compatibility)
+                let playerGeometry;
+                try {
+                    playerGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 4, 8);
+                } catch (e) {
+                    // Fallback to cylinder if CapsuleGeometry not available
+                    playerGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5, 8);
+                }
                 const playerMaterial = new THREE.MeshLambertMaterial({ color: 0x4a90e2 });
                 this.player = new THREE.Mesh(playerGeometry, playerMaterial);
                 this.player.position.set(0, 1, 0);
@@ -303,7 +308,14 @@
             
             // Create individual NPC
             createNPC(data) {
-                const npcGeometry = new THREE.CapsuleGeometry(0.4, 1.2, 4, 8);
+                // NPC capsule (using cylinder as fallback for compatibility)
+                let npcGeometry;
+                try {
+                    npcGeometry = new THREE.CapsuleGeometry(0.4, 1.2, 4, 8);
+                } catch (e) {
+                    // Fallback to cylinder if CapsuleGeometry not available
+                    npcGeometry = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 8);
+                }
                 const npcMaterial = new THREE.MeshLambertMaterial({ color: data.color });
                 const npc = new THREE.Mesh(npcGeometry, npcMaterial);
                 npc.position.set(data.x, 1, data.z);
