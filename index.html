@@ -3,44 +3,634 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL Game Assessment Demo</title>
+    <title>3rd-Person Social Hub Game</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            background: #000;
-            font-family: Arial, sans-serif;
+            background: #87CEEB;
+            font-family: 'Arial', sans-serif;
             overflow: hidden;
+            cursor: none;
         }
         canvas {
             display: block;
-            cursor: crosshair;
         }
-        #ui {
+        #hud {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 20px;
+            left: 20px;
             color: white;
             z-index: 100;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 18px;
+        }
+        #interaction {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            z-index: 100;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 16px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            display: none;
         }
         #instructions {
             position: absolute;
-            bottom: 10px;
-            left: 10px;
+            bottom: 20px;
+            left: 20px;
             color: white;
             z-index: 100;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            font-size: 14px;
+        }
+        #chatBubble {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 200px;
+            display: none;
+            z-index: 200;
+            pointer-events: none;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 1000;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <div id="ui">
-        <div>Score: <span id="score">0</span></div>
-        <div>Lives: <span id="lives">3</span></div>
+    <div class="loading" id="loading">Loading Social Hub...</div>
+    <div id="hud">
+        <div>Player: <span id="playerName">Visitor</span></div>
+        <div>Coins: <span id="coins">0</span></div>
+        <div>Activity: <span id="activity">Walking</span></div>
+    </div>
+    <div id="interaction">
+        Press E to interact
     </div>
     <div id="instructions">
-        WASD: Move | Mouse: Look | Space: Jump | Click: Shoot
+        WASD: Move | Space: Jump | Shift: Run | Mouse: Look | E: Interact | 1: Dance | 2: Sit
     </div>
-    <script src="webgl-game.js"></script>
+    <div id="chatBubble"></div>
+    
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Social Hub Game - 3rd Person WebGL Game using Three.js
+        // Modular structure for easy expansion
+        
+        class SocialHubGame {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.player = null;
+                this.npcs = [];
+                this.interactables = [];
+                this.keys = {};
+                this.mouse = { x: 0, y: 0 };
+                this.gameState = {
+                    coins: 0,
+                    playerName: 'Visitor',
+                    currentActivity: 'Walking'
+                };
+                this.clock = new THREE.Clock();
+                this.raycaster = new THREE.Raycaster();
+                this.mouseVector = new THREE.Vector2();
+                
+                this.init();
+            }
+            
+            // Initialize the game
+            init() {
+                this.setupScene();
+                this.setupLighting();
+                this.setupPlayer();
+                this.buildCity();
+                this.createNPCs();
+                this.setupUI();
+                this.setupControls();
+                this.animate();
+                
+                document.getElementById('loading').style.display = 'none';
+            }
+            
+            // Scene setup with Three.js
+            setupScene() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+                
+                // Camera setup for 3rd person view
+                this.camera = new THREE.PerspectiveCamera(
+                    75, 
+                    window.innerWidth / window.innerHeight, 
+                    0.1, 
+                    1000
+                );
+                this.camera.position.set(0, 5, 10);
+                
+                // Renderer setup
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.setClearColor(0x87CEEB);
+                document.body.appendChild(this.renderer.domElement);
+                
+                // Skybox
+                const skyGeometry = new THREE.SphereGeometry(500, 32, 32);
+                const skyMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x87CEEB,
+                    side: THREE.BackSide
+                });
+                const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+                this.scene.add(sky);
+            }
+            
+            // Lighting setup for the city
+            setupLighting() {
+                // Ambient light
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                this.scene.add(ambientLight);
+                
+                // Directional light (sun)
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(50, 50, 50);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                directionalLight.shadow.camera.near = 0.5;
+                directionalLight.shadow.camera.far = 500;
+                directionalLight.shadow.camera.left = -100;
+                directionalLight.shadow.camera.right = 100;
+                directionalLight.shadow.camera.top = 100;
+                directionalLight.shadow.camera.bottom = -100;
+                this.scene.add(directionalLight);
+            }
+            
+            // Player character setup
+            setupPlayer() {
+                // Player capsule
+                const playerGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 4, 8);
+                const playerMaterial = new THREE.MeshLambertMaterial({ color: 0x4a90e2 });
+                this.player = new THREE.Mesh(playerGeometry, playerMaterial);
+                this.player.position.set(0, 1, 0);
+                this.player.castShadow = true;
+                this.scene.add(this.player);
+                
+                // Player properties
+                this.player.userData = {
+                    velocity: new THREE.Vector3(),
+                    onGround: false,
+                    canJump: true,
+                    speed: 0.1,
+                    runSpeed: 0.2
+                };
+                
+                // Camera target for smooth following
+                this.cameraTarget = new THREE.Object3D();
+                this.cameraTarget.position.copy(this.player.position);
+                this.scene.add(this.cameraTarget);
+            }
+            
+            // City environment construction
+            buildCity() {
+                // Ground plane
+                const groundGeometry = new THREE.PlaneGeometry(100, 100);
+                const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x666666 });
+                const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
+                
+                // Central plaza
+                const plazaGeometry = new THREE.CircleGeometry(15, 32);
+                const plazaMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                const plaza = new THREE.Mesh(plazaGeometry, plazaMaterial);
+                plaza.rotation.x = -Math.PI / 2;
+                plaza.position.y = 0.01;
+                plaza.receiveShadow = true;
+                this.scene.add(plaza);
+                
+                // Buildings around the plaza
+                const buildingPositions = [
+                    { x: 20, z: 0, width: 8, height: 12, depth: 8, color: 0x8B4513 },
+                    { x: -20, z: 0, width: 8, height: 10, depth: 8, color: 0x654321 },
+                    { x: 0, z: 20, width: 6, height: 15, depth: 6, color: 0x2F4F4F },
+                    { x: 0, z: -20, width: 10, height: 8, depth: 10, color: 0x696969 },
+                    { x: 15, z: 15, width: 5, height: 6, depth: 5, color: 0x8B0000 },
+                    { x: -15, z: -15, width: 7, height: 9, depth: 7, color: 0x228B22 }
+                ];
+                
+                buildingPositions.forEach(pos => {
+                    const buildingGeometry = new THREE.BoxGeometry(pos.width, pos.height, pos.depth);
+                    const buildingMaterial = new THREE.MeshLambertMaterial({ color: pos.color });
+                    const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+                    building.position.set(pos.x, pos.height / 2, pos.z);
+                    building.castShadow = true;
+                    building.receiveShadow = true;
+                    this.scene.add(building);
+                });
+                
+                // Benches for interaction
+                this.createBenches();
+                
+                // Coffee stand
+                this.createCoffeeStand();
+            }
+            
+            // Create interactive benches
+            createBenches() {
+                const benchPositions = [
+                    { x: 8, z: 8 },
+                    { x: -8, z: 8 },
+                    { x: 8, z: -8 },
+                    { x: -8, z: -8 }
+                ];
+                
+                benchPositions.forEach(pos => {
+                    const benchGeometry = new THREE.BoxGeometry(2, 0.5, 0.5);
+                    const benchMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                    const bench = new THREE.Mesh(benchGeometry, benchMaterial);
+                    bench.position.set(pos.x, 0.25, pos.z);
+                    bench.userData = { type: 'bench', interactable: true };
+                    this.interactables.push(bench);
+                    this.scene.add(bench);
+                });
+            }
+            
+            // Create coffee stand
+            createCoffeeStand() {
+                const standGeometry = new THREE.BoxGeometry(2, 3, 1);
+                const standMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                const stand = new THREE.Mesh(standGeometry, standMaterial);
+                stand.position.set(12, 1.5, 0);
+                stand.userData = { type: 'coffee', interactable: true, cost: 5 };
+                this.interactables.push(stand);
+                this.scene.add(stand);
+            }
+            
+            // Create wandering NPCs
+            createNPCs() {
+                const npcData = [
+                    { name: 'Alice', color: 0xff6b6b, x: 5, z: 5 },
+                    { name: 'Bob', color: 0x4ecdc4, x: -5, z: 5 },
+                    { name: 'Charlie', color: 0x45b7d1, x: 5, z: -5 },
+                    { name: 'Diana', color: 0xf9ca24, x: -5, z: -5 }
+                ];
+                
+                npcData.forEach(data => {
+                    const npc = this.createNPC(data);
+                    this.npcs.push(npc);
+                    this.scene.add(npc);
+                });
+            }
+            
+            // Create individual NPC
+            createNPC(data) {
+                const npcGeometry = new THREE.CapsuleGeometry(0.4, 1.2, 4, 8);
+                const npcMaterial = new THREE.MeshLambertMaterial({ color: data.color });
+                const npc = new THREE.Mesh(npcGeometry, npcMaterial);
+                npc.position.set(data.x, 1, data.z);
+                npc.castShadow = true;
+                
+                // NPC properties
+                npc.userData = {
+                    name: data.name,
+                    type: 'npc',
+                    interactable: true,
+                    waypoints: this.generateWaypoints(),
+                    currentWaypoint: 0,
+                    speed: 0.02,
+                    lastMoveTime: 0,
+                    messages: [
+                        `Hi! I'm ${data.name}. Nice to meet you!`,
+                        `The weather is lovely today, isn't it?`,
+                        `Have you seen the new coffee stand?`,
+                        `I love walking around the plaza!`
+                    ]
+                };
+                
+                return npc;
+            }
+            
+            // Generate random waypoints for NPCs
+            generateWaypoints() {
+                const waypoints = [];
+                for (let i = 0; i < 5; i++) {
+                    waypoints.push({
+                        x: (Math.random() - 0.5) * 30,
+                        z: (Math.random() - 0.5) * 30
+                    });
+                }
+                return waypoints;
+            }
+            
+            // UI setup
+            setupUI() {
+                this.updateUI();
+            }
+            
+            // Control setup
+            setupControls() {
+                // Keyboard controls
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+                
+                // Mouse controls
+                document.addEventListener('mousemove', (e) => {
+                    this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                });
+                
+                // Window resize
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            // Main game loop
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                const deltaTime = this.clock.getDelta();
+                
+                this.updatePlayer(deltaTime);
+                this.updateNPCs(deltaTime);
+                this.updateCamera();
+                this.checkInteractions();
+                this.updateUI();
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            // Player movement and physics
+            updatePlayer(deltaTime) {
+                const player = this.player;
+                const userData = player.userData;
+                
+                // Movement input
+                const moveVector = new THREE.Vector3();
+                
+                if (this.keys['KeyW']) moveVector.z -= 1;
+                if (this.keys['KeyS']) moveVector.z += 1;
+                if (this.keys['KeyA']) moveVector.x -= 1;
+                if (this.keys['KeyD']) moveVector.x += 1;
+                
+                // Normalize movement
+                if (moveVector.length() > 0) {
+                    moveVector.normalize();
+                    const speed = this.keys['ShiftLeft'] ? userData.runSpeed : userData.speed;
+                    moveVector.multiplyScalar(speed);
+                    
+                    // Apply movement
+                    player.position.add(moveVector);
+                    userData.velocity.copy(moveVector);
+                } else {
+                    userData.velocity.multiplyScalar(0.9); // Friction
+                }
+                
+                // Jumping
+                if (this.keys['Space'] && userData.canJump) {
+                    userData.velocity.y = 0.3;
+                    userData.canJump = false;
+                }
+                
+                // Simple gravity
+                userData.velocity.y -= 0.01;
+                player.position.y += userData.velocity.y;
+                
+                // Ground collision
+                if (player.position.y <= 1) {
+                    player.position.y = 1;
+                    userData.velocity.y = 0;
+                    userData.canJump = true;
+                }
+                
+                // Keep player in bounds
+                player.position.x = Math.max(-45, Math.min(45, player.position.x));
+                player.position.z = Math.max(-45, Math.min(45, player.position.z));
+                
+                // Update activity
+                if (moveVector.length() > 0) {
+                    this.gameState.currentActivity = this.keys['ShiftLeft'] ? 'Running' : 'Walking';
+                } else {
+                    this.gameState.currentActivity = 'Idle';
+                }
+            }
+            
+            // NPC behavior update
+            updateNPCs(deltaTime) {
+                this.npcs.forEach(npc => {
+                    const userData = npc.userData;
+                    const currentTime = Date.now();
+                    
+                    if (currentTime - userData.lastMoveTime > 2000) { // Move every 2 seconds
+                        const waypoint = userData.waypoints[userData.currentWaypoint];
+                        const direction = new THREE.Vector3(
+                            waypoint.x - npc.position.x,
+                            0,
+                            waypoint.z - npc.position.z
+                        );
+                        
+                        if (direction.length() > 0.5) {
+                            direction.normalize();
+                            npc.position.add(direction.multiplyScalar(userData.speed));
+                        } else {
+                            userData.currentWaypoint = (userData.currentWaypoint + 1) % userData.waypoints.length;
+                        }
+                        
+                        userData.lastMoveTime = currentTime;
+                    }
+                });
+            }
+            
+            // Camera following system
+            updateCamera() {
+                const idealOffset = new THREE.Vector3(0, 5, 10);
+                const idealPosition = this.player.position.clone().add(idealOffset);
+                
+                // Smooth camera movement
+                this.camera.position.lerp(idealPosition, 0.1);
+                this.camera.lookAt(this.player.position);
+            }
+            
+            // Interaction system
+            checkInteractions() {
+                const playerPos = this.player.position;
+                let nearestInteractable = null;
+                let nearestDistance = Infinity;
+                
+                // Check NPCs
+                this.npcs.forEach(npc => {
+                    const distance = playerPos.distanceTo(npc.position);
+                    if (distance < 3 && distance < nearestDistance) {
+                        nearestInteractable = npc;
+                        nearestDistance = distance;
+                    }
+                });
+                
+                // Check other interactables
+                this.interactables.forEach(item => {
+                    const distance = playerPos.distanceTo(item.position);
+                    if (distance < 3 && distance < nearestDistance) {
+                        nearestInteractable = item;
+                        nearestDistance = distance;
+                    }
+                });
+                
+                // Show interaction prompt
+                const interactionDiv = document.getElementById('interaction');
+                if (nearestInteractable) {
+                    interactionDiv.style.display = 'block';
+                    interactionDiv.textContent = `Press E to ${this.getInteractionText(nearestInteractable)}`;
+                    
+                    // Handle E key press
+                    if (this.keys['KeyE']) {
+                        this.handleInteraction(nearestInteractable);
+                        this.keys['KeyE'] = false; // Prevent spam
+                    }
+                } else {
+                    interactionDiv.style.display = 'none';
+                }
+                
+                // Handle activity keys
+                if (this.keys['Digit1']) {
+                    this.dance();
+                    this.keys['Digit1'] = false;
+                }
+                
+                if (this.keys['Digit2']) {
+                    this.sit();
+                    this.keys['Digit2'] = false;
+                }
+            }
+            
+            // Get interaction text based on object type
+            getInteractionText(obj) {
+                switch (obj.userData.type) {
+                    case 'npc': return `talk to ${obj.userData.name}`;
+                    case 'bench': return 'sit down';
+                    case 'coffee': return 'buy coffee';
+                    default: return 'interact';
+                }
+            }
+            
+            // Handle interactions
+            handleInteraction(obj) {
+                switch (obj.userData.type) {
+                    case 'npc':
+                        this.talkToNPC(obj);
+                        break;
+                    case 'bench':
+                        this.sitOnBench(obj);
+                        break;
+                    case 'coffee':
+                        this.buyCoffee(obj);
+                        break;
+                }
+            }
+            
+            // Talk to NPC
+            talkToNPC(npc) {
+                const messages = npc.userData.messages;
+                const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+                this.showChatBubble(randomMessage, npc.position);
+            }
+            
+            // Sit on bench
+            sitOnBench(bench) {
+                this.gameState.currentActivity = 'Sitting';
+                this.showChatBubble('Ah, what a nice place to rest!', this.player.position);
+            }
+            
+            // Buy coffee
+            buyCoffee(stand) {
+                if (this.gameState.coins >= stand.userData.cost) {
+                    this.gameState.coins -= stand.userData.cost;
+                    this.showChatBubble('Thanks for the coffee! ☕', this.player.position);
+                } else {
+                    this.showChatBubble('Not enough coins! Need 5 coins.', this.player.position);
+                }
+            }
+            
+            // Dance activity
+            dance() {
+                this.gameState.currentActivity = 'Dancing';
+                this.showChatBubble('💃 Dancing! 💃', this.player.position);
+                
+                // Reset activity after 3 seconds
+                setTimeout(() => {
+                    this.gameState.currentActivity = 'Idle';
+                }, 3000);
+            }
+            
+            // Sit activity
+            sit() {
+                this.gameState.currentActivity = 'Sitting';
+                this.showChatBubble('Taking a break...', this.player.position);
+                
+                // Reset activity after 2 seconds
+                setTimeout(() => {
+                    this.gameState.currentActivity = 'Idle';
+                }, 2000);
+            }
+            
+            // Show chat bubble
+            showChatBubble(message, position) {
+                const bubble = document.getElementById('chatBubble');
+                bubble.textContent = message;
+                bubble.style.display = 'block';
+                
+                // Position bubble above object
+                const vector = position.clone();
+                vector.project(this.camera);
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vector.y * -0.5 + 0.5) * window.innerHeight - 50;
+                
+                bubble.style.left = x + 'px';
+                bubble.style.top = y + 'px';
+                
+                // Hide after 3 seconds
+                setTimeout(() => {
+                    bubble.style.display = 'none';
+                }, 3000);
+            }
+            
+            // Update UI elements
+            updateUI() {
+                document.getElementById('playerName').textContent = this.gameState.playerName;
+                document.getElementById('coins').textContent = this.gameState.coins;
+                document.getElementById('activity').textContent = this.gameState.currentActivity;
+            }
+        }
+        
+        // Start the game when page loads
+        window.addEventListener('load', () => {
+            new SocialHubGame();
+        });
+    </script>
 </body>
 </html>
