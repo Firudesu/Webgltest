@@ -86,8 +86,8 @@
     </div>
     <div id="chatBubble"></div>
     
-    <!-- Three.js CDN - Updated to newer version with CapsuleGeometry -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+    <!-- Three.js CDN - Using unpkg CDN with specific version -->
+    <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
     
     <script>
         // Social Hub Game - 3rd Person WebGL Game using Three.js
@@ -639,10 +639,17 @@
             }
         }
         
-        // Start the game when page loads
-        window.addEventListener('load', () => {
-            new SocialHubGame();
-        });
+        // Start the game when page loads and Three.js is available
+        function initGame() {
+            if (typeof THREE !== 'undefined') {
+                new SocialHubGame();
+            } else {
+                console.log('Waiting for Three.js to load...');
+                setTimeout(initGame, 100);
+            }
+        }
+        
+        window.addEventListener('load', initGame);
     </script>
 </body>
 </html>
