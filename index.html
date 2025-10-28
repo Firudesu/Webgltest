@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL 3D Cube Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="ui-overlay">
+            <div class="score-panel">
+                <h1>WebGL Cube Game</h1>
+                <div class="score">Score: <span id="score">0</span></div>
+                <div class="instructions">
+                    <p>Click cubes to destroy them!</p>
+                    <p>Use mouse to rotate view</p>
+                </div>
+            </div>
+            <div class="controls">
+                <button id="resetBtn">Reset Game</button>
+                <button id="addCubesBtn">Add More Cubes</button>
+            </div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+    
+    <script src="math-utils.js"></script>
+    <script src="webgl-utils.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
