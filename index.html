@@ -86,9 +86,26 @@
     </div>
     <div id="chatBubble"></div>
     
+    <!-- LPK File Input -->
+    <div id="lpkUpload" style="position: absolute; top: 20px; right: 20px; z-index: 1000;">
+        <input type="file" id="lpkFileInput" accept=".lpk" style="display: none;">
+        <button id="loadLPKButton" style="padding: 10px 20px; background: rgba(0,0,0,0.7); color: white; border: 2px solid white; border-radius: 5px; cursor: pointer; font-size: 14px;">
+            Load LPK File
+        </button>
+        <div id="lpkStatus" style="color: white; margin-top: 10px; font-size: 12px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);"></div>
+    </div>
+    
     <!-- Three.js CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- GLTF Loader for 3D models -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- OBJ Loader for OBJ models -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    <!-- JSZip for ZIP-based LPK files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- LPK Loader -->
+    <script src="lpk-loader.js"></script>
     
     <script>
         // Social Hub Game - 3rd Person WebGL Game using Three.js
@@ -113,6 +130,14 @@
                 this.raycaster = new THREE.Raycaster();
                 this.mouseVector = new THREE.Vector2();
                 
+                // LPK Loader
+                this.lpkLoader = new LPKLoader();
+                this.loadedLpkAssets = {
+                    meshes: [],
+                    textures: [],
+                    materials: []
+                };
+                
                 this.init();
             }
             
@@ -125,6 +150,7 @@
                 this.createNPCs();
                 this.setupUI();
                 this.setupControls();
+                this.setupLPKLoader();
                 this.animate();
                 
                 document.getElementById('loading').style.display = 'none';
@@ -369,6 +395,87 @@
                     this.camera.updateProjectionMatrix();
                     this.renderer.setSize(window.innerWidth, window.innerHeight);
                 });
+            }
+            
+            // Setup LPK file loader
+            setupLPKLoader() {
+                const fileInput = document.getElementById('lpkFileInput');
+                const loadButton = document.getElementById('loadLPKButton');
+                const statusDiv = document.getElementById('lpkStatus');
+                
+                loadButton.addEventListener('click', () => {
+                    fileInput.click();
+                });
+                
+                fileInput.addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    statusDiv.textContent = `Loading ${file.name}...`;
+                    statusDiv.style.color = '#ffff00';
+                    
+                    try {
+                        // Load and parse LPK file
+                        const lpkData = await this.lpkLoader.load(file);
+                        
+                        statusDiv.textContent = `LPK loaded: ${lpkData.format} format`;
+                        statusDiv.style.color = '#00ff00';
+                        
+                        // Load assets into scene
+                        const loadedObjects = await this.lpkLoader.loadIntoScene(lpkData, this.scene);
+                        
+                        // Store loaded assets
+                        this.loadedLpkAssets.meshes.push(...loadedObjects.meshes);
+                        this.loadedLpkAssets.textures.push(...loadedObjects.textures);
+                        
+                        // Position loaded meshes near the player
+                        loadedObjects.meshes.forEach((mesh, index) => {
+                            mesh.position.set(
+                                this.player.position.x + (index * 3),
+                                this.player.position.y,
+                                this.player.position.z + 5
+                            );
+                        });
+                        
+                        statusDiv.textContent = `Loaded: ${loadedObjects.meshes.length} models, ${loadedObjects.textures.length} textures`;
+                        statusDiv.style.color = '#00ff00';
+                        
+                        // Log LPK data structure for debugging
+                        console.log('LPK Data:', lpkData);
+                        console.log('Loaded Assets:', loadedObjects);
+                        
+                        // If there's metadata with scene data, apply it
+                        if (lpkData.metadata && lpkData.metadata.scene) {
+                            this.applySceneData(lpkData.metadata.scene);
+                        }
+                        
+                    } catch (error) {
+                        statusDiv.textContent = `Error: ${error.message}`;
+                        statusDiv.style.color = '#ff0000';
+                        console.error('LPK Load Error:', error);
+                    }
+                });
+            }
+            
+            // Apply scene data from LPK metadata
+            applySceneData(sceneData) {
+                if (sceneData.lighting) {
+                    // Adjust lighting based on LPK data
+                    if (sceneData.lighting.ambient) {
+                        const ambientLight = this.scene.children.find(c => c.type === 'AmbientLight');
+                        if (ambientLight) {
+                            ambientLight.color.setHex(sceneData.lighting.ambient.color);
+                            ambientLight.intensity = sceneData.lighting.ambient.intensity || 0.6;
+                        }
+                    }
+                }
+                
+                if (sceneData.fog) {
+                    // Adjust fog based on LPK data
+                    this.scene.fog.color.setHex(sceneData.fog.color || 0x87CEEB);
+                    this.scene.fog.near = sceneData.fog.near || 50;
+                    this.scene.fog.far = sceneData.fog.far || 200;
+                }
             }
             
             // Main game loop
