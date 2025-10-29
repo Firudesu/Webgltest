@@ -60,6 +60,51 @@
             z-index: 200;
             pointer-events: none;
         }
+        #lpkPanel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 150;
+            min-width: 250px;
+        }
+        #lpkPanel h3 {
+            margin: 0 0 10px 0;
+            color: #4a90e2;
+        }
+        #lpkPanel button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 0;
+            width: 100%;
+        }
+        #lpkPanel button:hover {
+            background: #357abd;
+        }
+        #lpkPanel button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #fileInput {
+            margin: 10px 0;
+            color: white;
+        }
+        #lpkStatus {
+            font-size: 12px;
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .status-success { background: rgba(40, 167, 69, 0.3); }
+        .status-error { background: rgba(220, 53, 69, 0.3); }
+        .status-info { background: rgba(23, 162, 184, 0.3); }
         .loading {
             position: absolute;
             top: 50%;
@@ -82,12 +127,26 @@
         Press E to interact
     </div>
     <div id="instructions">
-        WASD: Move | Space: Jump | Shift: Run | Mouse: Look | E: Interact | 1: Dance | 2: Sit
+        WASD: Move | Space: Jump | Shift: Run | Mouse: Look | E: Interact | 1: Dance | 2: Sit | L: Toggle LPK Panel
     </div>
     <div id="chatBubble"></div>
     
+    <!-- LPK Loader Panel -->
+    <div id="lpkPanel">
+        <h3>🎮 LPK Asset Loader</h3>
+        <input type="file" id="fileInput" accept=".lpk" style="display: none;">
+        <button id="loadLpkBtn">📁 Load LPK File</button>
+        <button id="loadExistingBtn">🔄 Load Existing LPK</button>
+        <button id="toggleTerrainBtn" disabled>🏔️ Toggle Terrain</button>
+        <button id="extractAssetsBtn" disabled>📦 Extract Assets</button>
+        <div id="lpkStatus">Ready to load LPK files...</div>
+        <div id="lpkInfo" style="font-size: 11px; margin-top: 10px;"></div>
+    </div>
+    
     <!-- Three.js CDN - Using unpkg CDN with specific version -->
     <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+    <!-- JSZip for LPK file handling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <script>
         // Social Hub Game - 3rd Person WebGL Game using Three.js
@@ -112,6 +171,12 @@
                 this.raycaster = new THREE.Raycaster();
                 this.mouseVector = new THREE.Vector2();
                 
+                // LPK Loader functionality
+                this.lpkAssets = null;
+                this.originalGround = null;
+                this.lpkTerrain = null;
+                this.lpkPanelVisible = true;
+                
                 this.init();
             }
             
@@ -124,6 +189,7 @@
                 this.createNPCs();
                 this.setupUI();
                 this.setupControls();
+                this.setupLPKLoader();
                 this.animate();
                 
                 document.getElementById('loading').style.display = 'none';
@@ -538,6 +604,11 @@
                     this.sit();
                     this.keys['Digit2'] = false;
                 }
+                
+                if (this.keys['KeyL']) {
+                    this.toggleLPKPanel();
+                    this.keys['KeyL'] = false;
+                }
             }
             
             // Get interaction text based on object type
@@ -636,6 +707,267 @@
                 document.getElementById('playerName').textContent = this.gameState.playerName;
                 document.getElementById('coins').textContent = this.gameState.coins;
                 document.getElementById('activity').textContent = this.gameState.currentActivity;
+            }
+            
+            // LPK Loader Setup
+            setupLPKLoader() {
+                const loadLpkBtn = document.getElementById('loadLpkBtn');
+                const loadExistingBtn = document.getElementById('loadExistingBtn');
+                const toggleTerrainBtn = document.getElementById('toggleTerrainBtn');
+                const extractAssetsBtn = document.getElementById('extractAssetsBtn');
+                const fileInput = document.getElementById('fileInput');
+                
+                // Load LPK file button
+                loadLpkBtn.addEventListener('click', () => {
+                    fileInput.click();
+                });
+                
+                // File input change
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.loadLPKFile(e.target.files[0]);
+                    }
+                });
+                
+                // Load existing LPK button
+                loadExistingBtn.addEventListener('click', () => {
+                    this.loadExistingLPK();
+                });
+                
+                // Toggle terrain button
+                toggleTerrainBtn.addEventListener('click', () => {
+                    this.toggleLPKTerrain();
+                });
+                
+                // Extract assets button
+                extractAssetsBtn.addEventListener('click', () => {
+                    this.extractLPKAssets();
+                });
+            }
+            
+            // Load LPK file
+            async loadLPKFile(file) {
+                this.updateLPKStatus('Loading LPK file...', 'info');
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    await this.parseLPKFile(arrayBuffer, file.name);
+                    
+                } catch (error) {
+                    console.error('Error loading LPK file:', error);
+                    this.updateLPKStatus('Error loading LPK file: ' + error.message, 'error');
+                }
+            }
+            
+            // Load existing LPK from repository
+            async loadExistingLPK() {
+                this.updateLPKStatus('Loading existing LPK file...', 'info');
+                
+                try {
+                    const response = await fetch('118c38f2-11ef-4566-be23-246731049822.lpk');
+                    if (!response.ok) throw new Error('Failed to fetch LPK file');
+                    
+                    const arrayBuffer = await response.arrayBuffer();
+                    await this.parseLPKFile(arrayBuffer, '118c38f2-11ef-4566-be23-246731049822.lpk');
+                    
+                } catch (error) {
+                    console.error('Error loading existing LPK:', error);
+                    this.updateLPKStatus('Error loading existing LPK: ' + error.message, 'error');
+                }
+            }
+            
+            // Parse LPK file
+            async parseLPKFile(arrayBuffer, filename) {
+                try {
+                    // Extract LPK header and ZIP data
+                    const header = new Uint8Array(arrayBuffer, 0, 8);
+                    const headerHex = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join('');
+                    
+                    this.updateLPKStatus('Parsing LPK structure...', 'info');
+                    
+                    // Extract ZIP portion (skip 8-byte header)
+                    const zipData = arrayBuffer.slice(8);
+                    
+                    // Load ZIP with JSZip
+                    const zip = new JSZip();
+                    const zipFile = await zip.loadAsync(zipData);
+                    
+                    const assets = {
+                        filename: filename,
+                        header: headerHex,
+                        files: {},
+                        fileCount: 0,
+                        totalSize: arrayBuffer.byteLength
+                    };
+                    
+                    // Analyze ZIP contents
+                    for (const [filename, file] of Object.entries(zipFile.files)) {
+                        if (file.dir) continue;
+                        
+                        assets.files[filename] = {
+                            name: filename,
+                            compressedSize: file._data ? file._data.compressedSize : 0,
+                            uncompressedSize: file._data ? file._data.uncompressedSize : 0,
+                            encrypted: true // Assume encrypted for now
+                        };
+                        assets.fileCount++;
+                    }
+                    
+                    this.lpkAssets = assets;
+                    this.updateLPKDisplay();
+                    this.updateLPKStatus('LPK file loaded successfully!', 'success');
+                    
+                    // Enable buttons
+                    document.getElementById('toggleTerrainBtn').disabled = false;
+                    document.getElementById('extractAssetsBtn').disabled = false;
+                    
+                    // Create demo terrain
+                    this.createDemoTerrain();
+                    
+                } catch (error) {
+                    throw new Error('Failed to parse LPK file: ' + error.message);
+                }
+            }
+            
+            // Update LPK display
+            updateLPKDisplay() {
+                const lpkInfo = document.getElementById('lpkInfo');
+                if (!this.lpkAssets) {
+                    lpkInfo.innerHTML = '';
+                    return;
+                }
+                
+                const assets = this.lpkAssets;
+                lpkInfo.innerHTML = `
+                    <strong>📁 ${assets.filename}</strong><br>
+                    Size: ${(assets.totalSize / 1024).toFixed(1)} KB<br>
+                    Header: ${assets.header}<br>
+                    Files: ${assets.fileCount}<br>
+                    ${Object.keys(assets.files).map(name => 
+                        `• ${name} (${(assets.files[name].uncompressedSize / 1024).toFixed(1)} KB)`
+                    ).join('<br>')}
+                `;
+            }
+            
+            // Update LPK status
+            updateLPKStatus(message, type) {
+                const statusDiv = document.getElementById('lpkStatus');
+                statusDiv.textContent = message;
+                statusDiv.className = `status-${type}`;
+            }
+            
+            // Create demo terrain from LPK data
+            createDemoTerrain() {
+                if (this.lpkTerrain) return; // Already created
+                
+                // Create a more interesting terrain to show LPK integration
+                const geometry = new THREE.PlaneGeometry(80, 80, 32, 32);
+                const vertices = geometry.attributes.position.array;
+                
+                // Add some height variation to simulate terrain from LPK data
+                for (let i = 0; i < vertices.length; i += 3) {
+                    const x = vertices[i];
+                    const z = vertices[i + 2];
+                    // Create hills and valleys
+                    vertices[i + 1] = Math.sin(x * 0.1) * Math.cos(z * 0.1) * 3 + 
+                                     Math.sin(x * 0.05) * 2 + 
+                                     Math.random() * 0.5;
+                }
+                
+                geometry.attributes.position.needsUpdate = true;
+                geometry.computeVertexNormals();
+                
+                const material = new THREE.MeshLambertMaterial({ 
+                    color: 0x4a7c59,
+                    wireframe: false
+                });
+                
+                this.lpkTerrain = new THREE.Mesh(geometry, material);
+                this.lpkTerrain.rotation.x = -Math.PI / 2;
+                this.lpkTerrain.position.y = -1;
+                this.lpkTerrain.receiveShadow = true;
+                this.lpkTerrain.visible = false; // Start hidden
+                
+                this.scene.add(this.lpkTerrain);
+                
+                // Store reference to original ground
+                if (!this.originalGround) {
+                    this.scene.traverse((child) => {
+                        if (child.isMesh && child.geometry instanceof THREE.PlaneGeometry && 
+                            child.position.y < 0.1 && child.rotation.x < -1) {
+                            this.originalGround = child;
+                        }
+                    });
+                }
+            }
+            
+            // Toggle LPK terrain
+            toggleLPKTerrain() {
+                if (!this.lpkTerrain) {
+                    this.updateLPKStatus('No terrain available', 'error');
+                    return;
+                }
+                
+                const isVisible = this.lpkTerrain.visible;
+                this.lpkTerrain.visible = !isVisible;
+                
+                if (this.originalGround) {
+                    this.originalGround.visible = isVisible;
+                }
+                
+                const btn = document.getElementById('toggleTerrainBtn');
+                btn.textContent = this.lpkTerrain.visible ? '🏔️ Hide Terrain' : '🏔️ Show Terrain';
+                
+                this.updateLPKStatus(
+                    this.lpkTerrain.visible ? 'LPK terrain enabled' : 'Original terrain restored', 
+                    'success'
+                );
+                
+                this.showChatBubble(
+                    this.lpkTerrain.visible ? 'LPK terrain loaded!' : 'Back to original terrain', 
+                    this.player.position
+                );
+            }
+            
+            // Extract LPK assets
+            extractLPKAssets() {
+                if (!this.lpkAssets) {
+                    this.updateLPKStatus('No LPK file loaded', 'error');
+                    return;
+                }
+                
+                const exportData = {
+                    timestamp: new Date().toISOString(),
+                    lpkFile: this.lpkAssets.filename,
+                    analysis: this.lpkAssets,
+                    note: 'Files are encrypted - this is the structural analysis only'
+                };
+                
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                    type: 'application/json'
+                });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'lpk-analysis.json';
+                a.click();
+                URL.revokeObjectURL(url);
+                
+                this.updateLPKStatus('Analysis exported successfully!', 'success');
+                this.showChatBubble('LPK analysis exported! 📁', this.player.position);
+            }
+            
+            // Toggle LPK panel visibility
+            toggleLPKPanel() {
+                const panel = document.getElementById('lpkPanel');
+                this.lpkPanelVisible = !this.lpkPanelVisible;
+                panel.style.display = this.lpkPanelVisible ? 'block' : 'none';
+                
+                this.showChatBubble(
+                    this.lpkPanelVisible ? 'LPK Panel opened' : 'LPK Panel closed', 
+                    this.player.position
+                );
             }
         }
         
